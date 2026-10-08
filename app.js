@@ -485,7 +485,7 @@ function publishDiscovery() {
         manufacturer: "Crestron",
         model: "DM-MD8X8-CPU3",
       },
-      origin: { name: "crestronproxy" },
+      origin: { name: "crestron-ha-bridge" },
     };
     mqttPublish(
       `${HA_DISCOVERY_PREFIX}/select/crestron_o${outputId}/config`,

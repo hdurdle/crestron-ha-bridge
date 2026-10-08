@@ -13,7 +13,7 @@ It also controls an A-NeuVideo **ANI-PiP-41UHD** 4x1 multiviewer (MCU FW 1.10.03
 - The multiviewer's RS-232 command set is in the vendor's ANI-PiP-41UHD user guide (a-neuvideo.com/pdf/UG-ANI-PIP-41UHD.pdf).
 - [logger.js](logger.js) — Pino instance.
 - [Dockerfile](Dockerfile) — Multi-stage Node 20 alpine build. Runs as the `node` user.
-- [crestronproxy-compose.yaml](crestronproxy-compose.yaml) — Compose file. All settings come from `.env` on the docker host (see [.env.example](.env.example)); the compose file has no `environment:` block. Bind-mounts `./id_rsa` into the container at `/app/id_rsa`, publishes port `8022` on the host, and has a `/status`-based healthcheck. Uses Docker's default bridge network; isolation is provided by the docker host's own network position, not by a Docker-level network.
+- [crestron-ha-bridge-compose.yaml](crestron-ha-bridge-compose.yaml) — Compose file. All settings come from `.env` on the docker host (see [.env.example](.env.example)); the compose file has no `environment:` block. Bind-mounts `./id_rsa` into the container at `/app/id_rsa`, publishes port `8022` on the host, and has a `/status`-based healthcheck. Uses Docker's default bridge network; isolation is provided by the docker host's own network position, not by a Docker-level network.
 
 There are no tests. `npm test` exits non-zero on purpose.
 
@@ -21,7 +21,7 @@ There are no tests. `npm test` exits non-zero on purpose.
 
 - **Deployment**: Docker Compose on a Linux docker host. The compose `build.context` is `.` (relative to the compose file). Port `8022` is published on the docker host; isolation from other networks is provided by the host's own network placement, not by a custom Docker network.
 - **Auth model**: there is none. All endpoints are unauthenticated. That is acceptable *only* because of the network isolation above — do not propose exposing the service more broadly without adding auth.
-- **`id_rsa`** is a runtime secret, **never** tracked in git and **never** baked into the image. The operator places it on the docker host next to `crestronproxy-compose.yaml`; compose bind-mounts it read-only at `/app/id_rsa`. The key is scoped to the Crestron device only. Do not reuse it elsewhere. (Earlier versions of this file claimed the key was intentionally committed — that's obsolete; if you see that framing anywhere else, fix it.)
+- **`id_rsa`** is a runtime secret, **never** tracked in git and **never** baked into the image. The operator places it on the docker host next to `crestron-ha-bridge-compose.yaml`; compose bind-mounts it read-only at `/app/id_rsa`. The key is scoped to the Crestron device only. Do not reuse it elsewhere. (Earlier versions of this file claimed the key was intentionally committed — that's obsolete; if you see that framing anywhere else, fix it.)
 - **Polling**: every `POLL_INTERVAL_MS` (5s in production) the proxy runs `DUMPDMROUTEINFO` over the persistent SSH session and re-parses it. Each run takes about 0.5s. Polling only matters for changes made outside HA; route changes through the proxy (MQTT or `/setavroute`) update the map and MQTT straight away, then a confirmation poll runs 1.5s later. SSH commands are serialised through a promise queue.
 - **MQTT**: the docker host must be able to reach HA's MQTT broker (credentials in `.env` on the docker host, never committed). HA sees `select.crestron_o101`…`o108` through MQTT discovery. MQTT is optional: without `MQTT_URL` the proxy is REST-only. If the parser matches no output slots, it keeps the previous map instead of zeroing it, so a bad poll can't push `Off` to every output. Never label input 0 `None`: HA's MQTT select reads that payload as "unknown".
 - **Multiviewer**: reached through a USR-TCP232-306 bridge at `MV_HOST:MV_PORT` (default port `8234`; 115200 8N1 on the serial side). ASCII commands end with `!`; every command, set or read, replies with CRLF lines in about 60ms. Read commands are layout-specific: in the wrong layout the device answers `please check your Multiview Mode and command is right?`. The bridge copies replies to every connected TCP client, so the proxy must be its only client; close the vendor's PC app first. The device's Quad layout isn't offered because only 3 sources are wired. The "Window n source" entities chain window → HDMI (`windowHdmi`, read from the device) → Crestron output (`MV_HDMI_OUTPUTS`) → input (`avRouteMap`), and route changes go through the same `setRoute()` as everything else. `applyRouteMap()` calls `multiviewer.onRoutesChanged()` so they stay current. HA templates and automations may compare against the `INPUT_NAMES` labels, so changing a label can break them. Its entities report available only when both the proxy and the multiviewer are online (`availability_mode: all`), because MQTT allows one last-will message per client.
@@ -48,10 +48,10 @@ npm run dev          # nodemon
 npm start
 
 # Build & deploy on the docker host
-docker compose -f crestronproxy-compose.yaml up -d --build
-docker compose -f crestronproxy-compose.yaml ps          # expect "healthy"
-docker compose -f crestronproxy-compose.yaml logs -f
-docker compose -f crestronproxy-compose.yaml down
+docker compose -f crestron-ha-bridge-compose.yaml up -d --build
+docker compose -f crestron-ha-bridge-compose.yaml ps          # expect "healthy"
+docker compose -f crestron-ha-bridge-compose.yaml logs -f
+docker compose -f crestron-ha-bridge-compose.yaml down
 ```
 
 ## Known issues / improvement opportunities

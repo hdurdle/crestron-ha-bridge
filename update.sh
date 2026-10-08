@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# crestronproxy - update script
+# crestron-ha-bridge - update script
 #
 # Pulls the latest changes, rebuilds the image and restarts the container,
 # then waits for the /status healthcheck to pass. Run on the docker host from
@@ -10,8 +10,8 @@ set -euo pipefail
 
 cd "$(dirname "${BASH_SOURCE[0]}")"
 
-COMPOSE_FILE="crestronproxy-compose.yaml"
-CONTAINER="crestronproxy"
+COMPOSE_FILE="crestron-ha-bridge-compose.yaml"
+CONTAINER="crestron-ha-bridge"
 
 # Prefer the compose plugin, fall back to the standalone binary
 if docker compose version >/dev/null 2>&1; then

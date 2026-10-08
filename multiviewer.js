@@ -262,7 +262,7 @@ function createMultiviewer({
           manufacturer: "A-NeuVideo",
           model: "ANI-PiP-41UHD",
         },
-        origin: { name: "crestronproxy" },
+        origin: { name: "crestron-ha-bridge" },
       };
       publish(`${discoveryPrefix}/select/multiviewer_${key}/config`, JSON.stringify(config));
     }

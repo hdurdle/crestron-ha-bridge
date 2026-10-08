@@ -5,7 +5,7 @@ A small proxy in front of a Crestron **DM-MD8X8-CPU3** DigitalMedia matrix switc
 - **MQTT** (optional): one Home Assistant `select` entity per output, set up via MQTT discovery. Route changes are pushed to HA as soon as they happen, and HA sends commands back over MQTT.
 - **REST**: simple JSON endpoints for reading and changing routes without speaking Crestron console syntax.
 
-Runs as a Docker container (`crestronproxy`) built with Docker Compose.
+Runs as a Docker container (`crestron-ha-bridge`) built with Docker Compose.
 
 > **Security:** there is no authentication on any endpoint, and `POST /command` runs arbitrary console commands on the Crestron. Only run this on a network segment that untrusted clients can't reach, and restrict who can publish to the MQTT `.../set` topics with broker ACLs.
 
@@ -81,15 +81,15 @@ Default listen port: `8022` (`PORT` env).
 
 ```bash
 # Read full route map
-curl http://crestronproxy:8022/routes
+curl http://crestron-ha-bridge:8022/routes
 
 # Route input 3 to output 105
-curl -X POST http://crestronproxy:8022/setavroute \
+curl -X POST http://crestron-ha-bridge:8022/setavroute \
   -H "Content-Type: application/json" \
   -d '{"inputId": 3, "outputId": 105}'
 
 # Which outputs are showing input 2?
-curl http://crestronproxy:8022/input/2
+curl http://crestron-ha-bridge:8022/input/2
 ```
 
 ## Configuration
@@ -127,10 +127,10 @@ Optional:
 
 ### Provisioning the SSH key
 
-`id_rsa` is **not** tracked by git and **not** baked into the Docker image. The operator places the key on the docker host alongside `crestronproxy-compose.yaml`; compose then bind-mounts it read-only at `/app/id_rsa`, which is where `SSH_PRIVATE_KEY_PATH=id_rsa` resolves inside the running container.
+`id_rsa` is **not** tracked by git and **not** baked into the Docker image. The operator places the key on the docker host alongside `crestron-ha-bridge-compose.yaml`; compose then bind-mounts it read-only at `/app/id_rsa`, which is where `SSH_PRIVATE_KEY_PATH=id_rsa` resolves inside the running container.
 
 ```bash
-# On the docker host, alongside crestronproxy-compose.yaml
+# On the docker host, alongside crestron-ha-bridge-compose.yaml
 ls -l id_rsa            # expect 0600 perms, owned by the deploy user
 chmod 0600 id_rsa
 ```
@@ -139,18 +139,18 @@ Use a key dedicated to the Crestron and don't reuse it elsewhere. Keep the Crest
 
 ### `.env` on the docker host
 
-All configuration, including the MQTT and multiviewer settings, lives in a `.env` file on the docker host, next to `crestronproxy-compose.yaml`. Start from [.env.example](.env.example). Compose loads it via `env_file` (needs Compose v2.24+). Like `id_rsa`, it's gitignored and excluded from the image. Run `chmod 0600 .env`.
+All configuration, including the MQTT and multiviewer settings, lives in a `.env` file on the docker host, next to `crestron-ha-bridge-compose.yaml`. Start from [.env.example](.env.example). Compose loads it via `env_file` (needs Compose v2.24+). Like `id_rsa`, it's gitignored and excluded from the image. Run `chmod 0600 .env`.
 
 ## Run
 
 ### Docker compose (production)
 
-The compose file is `crestronproxy-compose.yaml`. It builds from the repo (build context is `.`, relative to the compose file) and publishes port `8022` on the docker host. Run on the docker host:
+The compose file is `crestron-ha-bridge-compose.yaml`. It builds from the repo (build context is `.`, relative to the compose file) and publishes port `8022` on the docker host. Run on the docker host:
 
 ```bash
-docker compose -f crestronproxy-compose.yaml up -d --build
-docker compose -f crestronproxy-compose.yaml ps         # expect "healthy"
-docker compose -f crestronproxy-compose.yaml logs -f
+docker compose -f crestron-ha-bridge-compose.yaml up -d --build
+docker compose -f crestron-ha-bridge-compose.yaml ps         # expect "healthy"
+docker compose -f crestron-ha-bridge-compose.yaml logs -f
 ```
 
 The container has a healthcheck that polls its own `/status` every 30 seconds.

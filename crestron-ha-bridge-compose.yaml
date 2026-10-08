@@ -1,11 +1,11 @@
-name: crestronproxy
+name: crestron-ha-bridge
 
 services:
-  crestronproxy:
-    image: crestronproxy
+  crestron-ha-bridge:
+    image: crestron-ha-bridge
     build:
       context: .
-    container_name: crestronproxy
+    container_name: crestron-ha-bridge
     restart: unless-stopped
     ports:
       - "8022:8022"
