@@ -1,0 +1,23 @@
+{
+  "name": "crestron-ha-bridge",
+  "version": "1.0.0",
+  "private": true,
+  "main": "app.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "dev": "nodemon app.js",
+    "start": "node app.js"
+  },
+  "author": "Howard Durdle",
+  "license": "MIT",
+  "description": "Control a Crestron DM-MD8X8 matrix switcher and an ANI-PiP-41UHD multiviewer from Home Assistant via MQTT, with a REST API",
+  "dependencies": {
+    "express": "^5.1.0",
+    "mqtt": "^5.16.0",
+    "pino": "^9.6.0",
+    "ssh2": "^1.16.0"
+  },
+  "devDependencies": {
+    "nodemon": "^3.1.10"
+  }
+}

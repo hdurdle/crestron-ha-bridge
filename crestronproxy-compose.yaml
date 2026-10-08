@@ -1,0 +1,32 @@
+name: crestronproxy
+
+services:
+  crestronproxy:
+    image: crestronproxy
+    build:
+      context: .
+    container_name: crestronproxy
+    restart: unless-stopped
+    ports:
+      - "8022:8022"
+    # networks:
+    #   - traefik
+    volumes:
+      - /etc/localtime:/etc/localtime:ro
+      # SSH private key supplied by the operator. The file must exist on the
+      # docker host at the path resolved by `./id_rsa` (i.e. alongside this
+      # compose file). Read-only inside the container.
+      - ./id_rsa:/app/id_rsa:ro
+    env_file:
+      - path: .env
+        required: false
+    healthcheck:
+      test:
+        - "CMD"
+        - "node"
+        - "-e"
+        - "require('http').get('http://localhost:8022/status',r=>process.exit(r.statusCode===200?0:1)).on('error',()=>process.exit(1))"
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s

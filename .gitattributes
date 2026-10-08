@@ -1,0 +1,3 @@
+# Normalize all text files to LF on disk regardless of who commits.
+# Prevents CRLF/LF drift when the repo is edited from both Windows and Linux.
+* text=auto eol=lf

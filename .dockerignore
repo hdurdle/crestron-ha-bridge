@@ -1,0 +1,27 @@
+node_modules
+npm-debug.log*
+
+# Git
+.git
+.gitignore
+.gitattributes
+
+# Docs (image doesn't need these)
+*.md
+CLAUDE.md
+README.md
+
+# Env files (env is set via compose / runtime)
+.env
+.env.*
+
+# Secrets — supplied via bind mount, never baked into the image
+id_rsa
+id_rsa.pub
+*.pem
+
+# Editor / OS cruft
+.vscode
+.idea
+.DS_Store
+Thumbs.db
