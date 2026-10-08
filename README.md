@@ -118,6 +118,7 @@ Optional:
 | `HA_DISCOVERY_PREFIX` | `homeassistant` | HA MQTT discovery prefix |
 | `INPUT_NAMES` | — | JSON map, e.g. `{"0":"Off","1":"Apple TV"}`. Labels must be unique |
 | `OUTPUT_NAMES` | — | JSON map, e.g. `{"101":"Multi 1"}` |
+| `OFF_INPUT` | unset | An input with nothing connected, e.g. `7`. "Off" routes this input instead of breaking the route, and it's reported as `Off`. Needed on firmware where a break leaves video routed |
 | `MV_HOST` | unset (multiviewer off) | TCP-to-serial bridge address, e.g. `192.168.1.60` |
 | `MV_PORT` | `8234` | Bridge TCP port |
 | `MV_POLL_INTERVAL_MS` | `5000` | Multiviewer state poll cadence |

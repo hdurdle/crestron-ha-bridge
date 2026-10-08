@@ -34,6 +34,16 @@ const MV_POLL_INTERVAL_MS = parseInt(process.env.MV_POLL_INTERVAL_MS, 10) || 500
 // Crestron input carrying the multiviewer's own output (never a window source)
 const MV_CRESTRON_INPUT = parseInt(process.env.MV_CRESTRON_INPUT, 10) || 2;
 
+// Optional: an input with nothing connected, routed in place of a break.
+// On this firmware SETAVROUTE 0 clears audio but leaves video routed, so "Off"
+// never sticks. With OFF_INPUT set, "Off" routes this input instead, and the
+// parser reports it as input 0.
+const OFF_INPUT = parseInt(process.env.OFF_INPUT, 10) || null;
+if (OFF_INPUT !== null && (OFF_INPUT < 1 || OFF_INPUT > 8)) {
+  logger.error("FATAL: OFF_INPUT must be an input number 1-8. Exiting.");
+  process.exit(1);
+}
+
 const vars = {
   PORT,
   MAX_RETRIES,
@@ -271,6 +281,12 @@ function startPollingCommand() {
 // end ssh
 
 // route map update
+
+// OFF_INPUT stands in for "no source" (input 0) on the Crestron.
+const fromCrestronInput = (slot) => (slot === OFF_INPUT ? 0 : slot);
+const avRouteCommand = (inputId, outputId) =>
+  `SETAVROUTE ${inputId === 0 && OFF_INPUT ? OFF_INPUT : inputId} ${outputId}`;
+
 function updateAvRouteMapFromText(text) {
   const lines = text.split("\n").map((line) => line.trim());
   let currentOutputSlot = null;
@@ -301,7 +317,7 @@ function updateAvRouteMapFromText(text) {
     if (currentOutputSlot && videoRouteMatch) {
       const inputSlot = parseInt(videoRouteMatch[1], 10);
       const outputIndex = currentOutputSlot - 33; // index 0–7
-      const inputIndex = inputSlot;
+      const inputIndex = fromCrestronInput(inputSlot);
       if (
         outputIndex >= 0 &&
         outputIndex < 8 &&
@@ -319,7 +335,7 @@ function updateAvRouteMapFromText(text) {
       const inputSlot = parseInt(audioRouteMatch[1], 10);
       const outputIndex = currentOutputSlot - 33;
       if (inputSlot >= 0 && inputSlot <= 8) {
-        audioMap[outputIndex] = inputSlot;
+        audioMap[outputIndex] = fromCrestronInput(inputSlot);
       }
     }
   }
@@ -369,10 +385,11 @@ function enforceFullAvRoutes(videoMap, audioMap) {
     }
 
     realignAttempts[index] = { split, reported: false };
+    const command = avRouteCommand(video, outputId);
     logger.warn(
-      `Output ${outputId} split (video ${video}, audio ${audio}); re-applying SETAVROUTE ${video} ${outputId}`,
+      `Output ${outputId} split (video ${video}, audio ${audio}); re-applying ${command}`,
     );
-    execCommand(`SETAVROUTE ${video} ${outputId}`)
+    execCommand(command)
       .then(scheduleConfirmPoll)
       .catch((err) => logger.error(err, `Re-applying AV route on ${outputId} failed`));
   });
@@ -423,7 +440,7 @@ function scheduleConfirmPoll() {
 
 // Always SETAVROUTE: audio and video are never routed separately.
 async function setRoute(inputId, outputId) {
-  const command = `SETAVROUTE ${inputId} ${outputId}`;
+  const command = avRouteCommand(inputId, outputId);
   logger.info(command);
 
   if (!isConnected) await connectSSH();
