@@ -8,9 +8,13 @@ A Node.js / Express proxy that wraps SSH access to a Crestron **DM-MD8X8-CPU3** 
 
 It also controls an A-NeuVideo **ANI-PiP-41UHD** 4x1 multiviewer (MCU FW 1.10.03) fed by Crestron outputs 101/102/104 on its HDMI 1/2/3. Its output goes back into Crestron input 2 ("Multi").
 
+It also controls a **ProofVision** bathroom TV (non-WebOS range) over RS-232 through a USR-W610 TCP-to-serial bridge.
+
 - [app.js](app.js) — Express app, SSH client, polling loop, route-map parser, MQTT/HA discovery, all endpoints. ~700 lines.
 - [multiviewer.js](multiviewer.js) — multiviewer client: TCP-to-serial transport, state refresh, HA `select` entities. Its own file because it's a second device with its own protocol.
 - The multiviewer's RS-232 command set is in the vendor's ANI-PiP-41UHD user guide (a-neuvideo.com/pdf/UG-ANI-PIP-41UHD.pdf).
+- [tv.js](tv.js) — TV client: framed NEC key codes over TCP-to-serial, ACK-based availability, assumed-state HA `switch`/`select`/`button` entities.
+- The TV's key codes are in ProofVision's "RS232 and IR codes" sheet (proofvision.co.uk, RS232/IR control code downloads). Its "38400 baud" is wrong: the TV runs at 115200 8N1. It also has typos (AUDIO `82 70`, SLEEP `CD 3F`); `tv.js` computes the check byte itself.
 - [logger.js](logger.js) — Pino instance.
 - [Dockerfile](Dockerfile) — Multi-stage Node 20 alpine build. Runs as the `node` user.
 - [crestron-ha-bridge-compose.yaml](crestron-ha-bridge-compose.yaml) — Compose file. All settings come from `.env` on the docker host (see [.env.example](.env.example)); the compose file has no `environment:` block. Bind-mounts `./id_rsa` into the container at `/app/id_rsa`, publishes port `8022` on the host, and has a `/status`-based healthcheck. Uses Docker's default bridge network; isolation is provided by the docker host's own network position, not by a Docker-level network.
@@ -25,6 +29,7 @@ There are no tests. `npm test` exits non-zero on purpose.
 - **Polling**: every `POLL_INTERVAL_MS` (5s in production) the proxy runs `DUMPDMROUTEINFO` over the persistent SSH session and re-parses it. Each run takes about 0.5s. Polling only matters for changes made outside HA; route changes through the proxy (MQTT or `/setavroute`) update the map and MQTT straight away, then a confirmation poll runs 1.5s later. SSH commands are serialised through a promise queue.
 - **MQTT**: the docker host must be able to reach HA's MQTT broker (credentials in `.env` on the docker host, never committed). HA sees `select.crestron_o101`…`o108` through MQTT discovery. MQTT is optional: without `MQTT_URL` the proxy is REST-only. If the parser matches no output slots, it keeps the previous map instead of zeroing it, so a bad poll can't push `Off` to every output. Never label input 0 `None`: HA's MQTT select reads that payload as "unknown".
 - **Multiviewer**: reached through a USR-TCP232-306 bridge at `MV_HOST:MV_PORT` (default port `8234`; 115200 8N1 on the serial side). ASCII commands end with `!`; every command, set or read, replies with CRLF lines in about 60ms. Read commands are layout-specific: in the wrong layout the device answers `please check your Multiview Mode and command is right?`. The bridge copies replies to every connected TCP client, so the proxy must be its only client; close the vendor's PC app first. The device's Quad layout isn't offered because only 3 sources are wired. The "Window n source" entities chain window → HDMI (`windowHdmi`, read from the device) → Crestron output (`MV_HDMI_OUTPUTS`) → input (`avRouteMap`), and route changes go through the same `setRoute()` as everything else. `applyRouteMap()` calls `multiviewer.onRoutesChanged()` so they stay current. HA templates and automations may compare against the `INPUT_NAMES` labels, so changing a label can break them. Its entities report available only when both the proxy and the multiviewer are online (`availability_mode: all`), because MQTT allows one last-will message per client.
+- **TV**: each frame is `A0 F0 55 FF <key> <key ^ 0xFF>` (NEC remote code, custom code `08F7`). There are no queries. The TV ACKs every frame within ~30ms with 3-4 bytes that depend only on the key group (`00 00 00 c0` power on, `00 00 00` power off and key `00`, `00 00 00 e0` input, `00 00 00 fc` volume, `00 00 1c 00` mute). The ACK is identical when on and in standby (probed 2026-10-09), so power and input are assumed state, re-seeded from the retained MQTT state topics on restart. Key `00` has no function but is ACKed, which makes it the heartbeat that drives availability. Mute is a toggle, so it's a button. The Crestron can't stand in as a presence signal: `DUMPDMROUTEINFO` reports `Hot plug is Low` on every output. Don't use the old `nc` shell commands alongside the proxy, because the bridge copies ACKs to every client.
 - **Transport choice**: the SSH console is the only Crestron-supported third-party path without a control processor. CTP telnet (41795) is the same console, just unencrypted. CIP (41794) would mean emulating a processor. Neither one makes the UI more responsive; that comes from the MQTT push.
 
 ## Key invariants
@@ -67,7 +72,7 @@ Accepted under the network-isolation assumption (port `8022` is only reachable f
 
 ## Conventions for changes in this repo
 
-- `app.js` holds the Crestron service; `multiviewer.js` holds the second device. Resist the urge to split into `routes/`, `services/`, `parsers/` etc. unless adding real complexity — there isn't enough surface area to justify it.
+- `app.js` holds the Crestron service; `multiviewer.js` and `tv.js` hold one other device each. Resist the urge to split into `routes/`, `services/`, `parsers/` etc. unless adding real complexity — there isn't enough surface area to justify it.
 - Pino is the logger. Don't reach for `console.log`.
 - The route map is intentionally global state in `app.js`. Don't introduce a class wrapper for it without a reason.
 - When changing the parser, the API, or the slot-mapping arithmetic, change all three together and re-check the invariants in this file.

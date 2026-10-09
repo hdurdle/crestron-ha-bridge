@@ -55,14 +55,30 @@ In PiP, window 1 is the large picture and window 2 is the inset. A window source
 
 The bridge copies replies to every connected TCP client, so the proxy must be its only client. Close the vendor's Windows app before relying on HA. `GET /multiviewer` returns the current state.
 
+## TV
+
+If `TV_HOST` is set, the proxy also controls a ProofVision bathroom TV (non-WebOS range) through a TCP-to-serial bridge on its RS-232 port (115200 8N1; ProofVision's code sheet says 38400, which is wrong). The HA entities appear under a device named `TV_NAME`. Entity IDs below assume `TV_NAME=Bath TV`:
+
+| Entity | Options | Key code |
+|---|---|---|
+| `switch.bath_tv_power` | On / off | `a8` / `a9` |
+| `select.bath_tv_input` | HDMI 1, HDMI 2, AV, PC, Component, DTV, ATV, USB | `a1`, `ab`, `a0`, `a3`, `a6`, `a4`, `a5`, `aa` |
+| `button.bath_tv_vol_up`, `vol_down`, `mute` | Press | `83`, `86`, `df` (mute toggles) |
+
+Each command is the remote's NEC key code framed as `A0 F0 55 FF <key> <key ^ 0xFF>`. The TV can't be queried. It ACKs every frame within about 30ms, but the ACK depends only on the key, not on whether the TV is on. So power and input are **assumed state**: what the proxy last sent successfully. Changes from the TV's own remote aren't seen. The assumed state is restored from the retained MQTT topics after a restart.
+
+Every `TV_POLL_INTERVAL_MS` the proxy sends key `00`, which the TV ACKs without doing anything. The TV entities are available only while that ACK keeps arriving, so a TV without power or a loose serial cable shows as unavailable. A command that isn't ACKed within 500ms is logged as failed, and HA is set back to the assumed state. Changing `TV_NAME` changes the entity IDs, which creates new entities. `GET /tv` returns the assumed state.
+
 ## API
 
 Default listen port: `8022` (`PORT` env).
 
 | Method | Path | Body | Returns |
 |---|---|---|---|
-| `GET`  | `/status` | — | `{ connected: bool, mqtt: "connected" \| "disconnected" \| "disabled", multiviewer: same }` |
+| `GET`  | `/status` | — | `{ connected: bool, mqtt: "connected" \| "disconnected" \| "disabled", multiviewer: same, tv: same }` |
 | `GET`  | `/multiviewer` | — | Multiviewer state: layout, style, windows, PiP, audio |
+| `GET`  | `/tv` | — | TV assumed state: `{ connected, answering, power, input }` |
+| `POST` | `/tv/:key` | `{ value: string }` | TV command: `power` (`ON`/`OFF`), `input` (option label), or `vol_up` / `vol_down` / `mute` (no value). 500 if the TV doesn't ACK. |
 | `GET`  | `/routes` | — | Full route map: `{ outputs: { o101: { input: "<n>" }, ... } }` |
 | `GET`  | `/input/:id` | — | Outputs currently fed by input `:id` (0–8). 404 if none. |
 | `GET`  | `/output/:id` | — | Input feeding output `:id` (101–108). |
@@ -125,6 +141,10 @@ Optional:
 | `MV_INPUT_NAMES` | `HDMI 1`…`HDMI 3` | JSON map, e.g. `{"1":"Multi 1","2":"Multi 2","3":"Spare HDMI"}` |
 | `MV_HDMI_OUTPUTS` | `{"1":101,"2":102,"3":104}` | Crestron output feeding each multiviewer HDMI input |
 | `MV_CRESTRON_INPUT` | `2` | Crestron input carrying the multiviewer's output; never offered as a window source |
+| `TV_HOST` | unset (TV off) | TCP-to-serial bridge on the TV's RS-232 port, e.g. `192.168.1.61` |
+| `TV_PORT` | `8899` | Bridge TCP port |
+| `TV_POLL_INTERVAL_MS` | `30000` | Heartbeat cadence (key `00`), which drives the TV entities' availability |
+| `TV_NAME` | `TV` | HA device name; also sets the entity IDs (`Bath TV` gives `switch.bath_tv_power`) |
 
 ### Provisioning the SSH key
 
@@ -140,7 +160,7 @@ Use a key dedicated to the Crestron and don't reuse it elsewhere. Keep the Crest
 
 ### `.env` on the docker host
 
-All configuration, including the MQTT and multiviewer settings, lives in a `.env` file on the docker host, next to `crestron-ha-bridge-compose.yaml`. Start from [.env.example](.env.example). Compose loads it via `env_file` (needs Compose v2.24+). Like `id_rsa`, it's gitignored and excluded from the image. Run `chmod 0600 .env`.
+All configuration, including the MQTT, multiviewer and TV settings, lives in a `.env` file on the docker host, next to `crestron-ha-bridge-compose.yaml`. Start from [.env.example](.env.example). Compose loads it via `env_file` (needs Compose v2.24+). Like `id_rsa`, it's gitignored and excluded from the image. Run `chmod 0600 .env`.
 
 ## Run
 

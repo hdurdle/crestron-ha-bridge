@@ -2,6 +2,7 @@ const { Client } = require("ssh2");
 const mqtt = require("mqtt");
 const { logger } = require("./logger.js");
 const { createMultiviewer } = require("./multiviewer.js");
+const { createTv } = require("./tv.js");
 const express = require("express");
 const { readFileSync } = require("fs");
 
@@ -33,6 +34,12 @@ const MV_PORT = parseInt(process.env.MV_PORT, 10) || 8234;
 const MV_POLL_INTERVAL_MS = parseInt(process.env.MV_POLL_INTERVAL_MS, 10) || 5000;
 // Crestron input carrying the multiviewer's own output (never a window source)
 const MV_CRESTRON_INPUT = parseInt(process.env.MV_CRESTRON_INPUT, 10) || 2;
+
+// Optional: ProofVision bathroom TV via TCP-to-serial bridge. Needs MQTT for HA.
+const TV_HOST = process.env.TV_HOST;
+const TV_PORT = parseInt(process.env.TV_PORT, 10) || 8899;
+const TV_POLL_INTERVAL_MS = parseInt(process.env.TV_POLL_INTERVAL_MS, 10) || 30000;
+const TV_NAME = process.env.TV_NAME || "TV";
 
 // Optional: an input with nothing connected, routed in place of a break.
 // On this firmware SETAVROUTE 0 clears audio but leaves video routed, so "Off"
@@ -540,10 +547,29 @@ const multiviewer = MV_HOST
     })
   : null;
 
+const tv = TV_HOST
+  ? createTv({
+      host: TV_HOST,
+      port: TV_PORT,
+      pollMs: TV_POLL_INTERVAL_MS,
+      name: TV_NAME,
+      publish: mqttPublish,
+      topic,
+      discoveryPrefix: HA_DISCOVERY_PREFIX,
+      proxyAvailabilityTopic: availabilityTopic,
+    })
+  : null;
+
 async function handleMqttCommand(topicName, payload) {
   const mvMatch = topicName.match(/\/multiviewer\/(\w+)\/set$/);
   if (mvMatch && multiviewer) {
     return multiviewer.handleCommand(mvMatch[1], payload);
+  }
+
+  const tvMatch = topicName.match(/\/tv\/(\w+)\/(set|state)$/);
+  if (tvMatch && tv) {
+    if (tvMatch[2] === "state") return tv.seedState(tvMatch[1], payload);
+    return tv.handleCommand(tvMatch[1], payload);
   }
 
   const match = topicName.match(/\/output\/(\d+)\/set$/);
@@ -591,6 +617,10 @@ function startMqtt() {
       if (multiviewer) {
         multiviewer.onMqttConnect();
         subscriptions.push(multiviewer.commandTopic);
+      }
+      if (tv) {
+        tv.onMqttConnect();
+        subscriptions.push(tv.commandTopic, tv.stateTopic);
       }
       mqttClient.subscribe(subscriptions, { qos: 1 }, (err) => {
         if (err) logger.error(err, "MQTT subscribe failed");
@@ -709,7 +739,9 @@ app.get("/status", (req, res) => {
   if (mqttClient) mqttState = mqttClient.connected ? "connected" : "disconnected";
   let mvState = "disabled";
   if (multiviewer) mvState = multiviewer.isConnected() ? "connected" : "disconnected";
-  res.json({ connected: isConnected, mqtt: mqttState, multiviewer: mvState });
+  let tvState = "disabled";
+  if (tv) tvState = tv.isConnected() ? "connected" : "disconnected";
+  res.json({ connected: isConnected, mqtt: mqttState, multiviewer: mvState, tv: tvState });
 });
 
 // current multiviewer state (layout, windows, audio)
@@ -717,6 +749,28 @@ app.get("/multiviewer", (req, res) => {
   logger.info("/multiviewer");
   if (!multiviewer) return res.status(404).json({ error: "Multiviewer not configured" });
   res.json(multiviewer.getState());
+});
+
+// assumed TV state (power, input) and whether the TV is answering
+app.get("/tv", (req, res) => {
+  logger.info("/tv");
+  if (!tv) return res.status(404).json({ error: "TV not configured" });
+  res.json(tv.getState());
+});
+
+// send a TV command: power ON/OFF, input <label>, or vol_up / vol_down / mute
+app.post("/tv/:key", async (req, res) => {
+  const { key } = req.params;
+  const value = req.body && req.body.value;
+  logger.info(`/tv/${key} ${value || ""}`);
+  if (!tv) return res.status(404).json({ error: "TV not configured" });
+
+  try {
+    await tv.perform(key, String(value));
+    res.json(tv.getState());
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
 });
 
 // send an arbitrary command
@@ -771,6 +825,7 @@ app.listen(PORT, async () => {
 
   startMqtt();
   if (multiviewer) multiviewer.start();
+  if (tv) tv.start();
 
   try {
     await connectSSH();
