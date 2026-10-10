@@ -489,7 +489,17 @@ function publishOutputState(index) {
   );
 }
 
-// One HA `select` entity per output; the options are the input names.
+const haDevice = {
+  identifiers: ["crestron_dm_md8x8"],
+  name: "Crestron DM-MD8x8",
+  manufacturer: "Crestron",
+  model: "DM-MD8X8-CPU3",
+};
+const haOrigin = { name: "crestron-ha-bridge" };
+
+// One HA `select` entity per output; the options are the input names. Plus a
+// connectivity sensor on the availability topic. It has no availability topic
+// of its own, so the LWT turns it off rather than unavailable.
 function publishDiscovery() {
   for (let index = 0; index < 8; index++) {
     const outputId = 101 + index;
@@ -503,19 +513,31 @@ function publishDiscovery() {
       availability_topic: availabilityTopic,
       options: inputOptions,
       qos: 1,
-      device: {
-        identifiers: ["crestron_dm_md8x8"],
-        name: "Crestron DM-MD8x8",
-        manufacturer: "Crestron",
-        model: "DM-MD8X8-CPU3",
-      },
-      origin: { name: "crestron-ha-bridge" },
+      device: haDevice,
+      origin: haOrigin,
     };
     mqttPublish(
       `${HA_DISCOVERY_PREFIX}/select/crestron_o${outputId}/config`,
       JSON.stringify(config),
     );
   }
+
+  mqttPublish(
+    `${HA_DISCOVERY_PREFIX}/binary_sensor/crestron_connectivity/config`,
+    JSON.stringify({
+      name: "Connectivity",
+      unique_id: "crestron_dm_md8x8_connectivity",
+      default_entity_id: "binary_sensor.crestron_connectivity",
+      device_class: "connectivity",
+      entity_category: "diagnostic",
+      state_topic: availabilityTopic,
+      payload_on: "online",
+      payload_off: "offline",
+      qos: 1,
+      device: haDevice,
+      origin: haOrigin,
+    }),
+  );
 }
 
 // Window sources: named Crestron inputs, minus "Off" (a break doesn't stick on

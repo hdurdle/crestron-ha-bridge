@@ -29,11 +29,14 @@ Set `MQTT_URL` to enable it. The proxy then uses these topics:
 | Topic | Direction | Payload |
 |---|---|---|
 | `homeassistant/select/crestron_o<101-108>/config` | proxy → HA, retained | HA discovery config, one per output |
+| `homeassistant/binary_sensor/crestron_connectivity/config` | proxy → HA, retained | HA discovery config for the connectivity sensor |
 | `crestron/output/<101-108>/state` | proxy → HA, retained | Current input label, e.g. `Apple TV` or `Off` |
 | `crestron/output/<101-108>/set` | HA → proxy | Input label to route to that output |
 | `crestron/availability` | proxy → HA, retained, LWT | `online` when MQTT and SSH are both up and routes are known, otherwise `offline` |
 
 The entities are `select.crestron_o101` … `select.crestron_o108`, grouped under one "Crestron DM-MD8x8" device. Use `select.select_option` in scripts and automations. Labels come from `INPUT_NAMES` / `OUTPUT_NAMES`. Without them, the labels are `Input N` / `Output N`, and input 0 is `Off`. Never label an input `None`: HA's MQTT select reads that payload as "unknown".
+
+`binary_sensor.crestron_connectivity` (diagnostic, on the same device) follows `crestron/availability`: on when online, off when offline or when the proxy drops off MQTT. It has no availability topic, so it reads off rather than unavailable. Use it in place of polling `/status`.
 
 Feedback timing: changes made from HA show up immediately. Changes made elsewhere (front panel, another controller) show up within one poll interval.
 
